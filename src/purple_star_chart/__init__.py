@@ -1,6 +1,6 @@
 from src.purple_star_chart.constructor_classes import Stem, Branch
 
-# reference tables used throughout the class
+# reference tables used throughout
 _stem_lookup = {
     'jia': Stem(1, 'jia', 'wood'),
     'yi': Stem(0, 'yi', 'wood'),

@@ -4,34 +4,8 @@ from attrs import define, field
 from datetime import datetime
 from .BaZiChart import BaZiChart
 from src.purple_star_chart import _stem_lookup, _branch_lookup, _stems, _branches
-from src.purple_star_chart.constructor_classes import Pillar
+from src.purple_star_chart.constructor_classes import Pillar, PSPalace, PSPalaces
 from lunardate import LunarDate
-
-@define
-class PSPalace:
-    '''object that contains data for a single palace'''
-    name: str
-    pillar: Pillar
-    stars: list = field(factory=list)
-    is_bodypalace: bool = field(init=False, default=False)
-
-@define
-class PSPalaces:
-    '''object for holding palace information for an entire chart
-    Currently just a fancy dict, but prepping for future development and for
-    more intuitive attribute handling'''
-    life: PSPalace
-    siblings: PSPalace
-    spouse: PSPalace
-    children: PSPalace
-    wealth: PSPalace
-    health: PSPalace
-    travel: PSPalace
-    friends: PSPalace
-    career: PSPalace
-    property: PSPalace
-    fortune: PSPalace
-    parents: PSPalace
 
 @define
 class PurpleStarChart:

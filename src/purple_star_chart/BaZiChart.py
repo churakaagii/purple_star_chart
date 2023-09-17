@@ -7,7 +7,6 @@ from attrs import define
 from datetime import datetime, date
 from src.purple_star_chart import _stem_lookup, _branch_lookup, _stems, _branches
 from src.purple_star_chart.constructor_classes import Pillar
-# from constructor_classes import Pillar
 
 @define
 class BaZiChart():
