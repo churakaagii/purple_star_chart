@@ -61,13 +61,14 @@ class PurpleStarChart:
         palaces = PSPalaces(**palaces_dict)
         return cls(solar_dt, ldate, this_bazi, palaces, hour_branch_loc, palaces_bybranch)
 
-    def _traverse_branch(self, star_name, start_loc, offset, back=False):
+    def _add_star_by_branch(self, star_name, start_loc, offset=0, back=False):
         '''private helper that traverses branches based on parameters
         and updates palace at final branch with star_name'''
         from operator import neg
 
+        this_loc = _branches.index(start_loc) if isinstance(start_loc, str) else start_loc
         offset = neg(offset) if back == True else offset
-        this_branch = _branches[(start_loc + offset) % 12]
+        this_branch = _branches[(this_loc + offset) % 12]
         palace = self._palace_by_branch[this_branch]
         palace.stars.append(star_name)
         self._palace_by_star[star_name] = palace.name
@@ -75,7 +76,7 @@ class PurpleStarChart:
     def _apply_branch_traversal(self, starmaps, backstars=[], **kwargs):
         for star, loc in starmaps.items():
             isBack = True if star in backstars else False
-            self._traverse_branch(star, loc, back=isBack, **kwargs)
+            self._add_star_by_branch(star, loc, back=isBack, **kwargs)
     
     def _derive_elemental_phase(self):
         phases = [
@@ -97,7 +98,7 @@ class PurpleStarChart:
         lp_branch_ploc = _branches.index(self.palaces.life.pillar.branch.name) // 2
         self.elemental_phase = str_lookup[phases[stem_ploc][lp_branch_ploc]]
 
-    def _place_ziwei(self):
+    def _plot_ziwei(self):
         ziwei_lookup = {
             'water': [1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11,
                 0, 0, 1, 1, 2, 2, 3, 3, 4],
@@ -116,7 +117,7 @@ class PurpleStarChart:
         ziwei_palace.stars.append('zi_wei')
         self._palace_by_star['zi_wei'] = ziwei_palace
 
-    def _add_major_stars(self):
+    def _plot_major_stars(self):
         '''updates palaces with 14 major stars'''
         # locations of 14 major stars if ziwei is at zi
         startlocs = {
@@ -146,7 +147,7 @@ class PurpleStarChart:
         # traverse branches to get final star locations
         self._apply_branch_traversal(startlocs, backstars=backlist, offset=zwloc)
 
-    def _add_hour_stars(self):
+    def _plot_hour_stars(self):
         '''updates palaces with stars requiring birth hour to derive'''
         startlocs = {
             'wen_chang': 10,
@@ -157,6 +158,7 @@ class PurpleStarChart:
             'feng_gao': 2,
             'ling_xing': 10
         }
+        backstars = ['wen_chang', 'di_kong']
 
         # get branch group based on year pillar branch
         yr_branch = self.bazi.year.branch.name
@@ -172,9 +174,10 @@ class PurpleStarChart:
         elif yr_grp == 3:
             startlocs.update({'huo_xing': 9})
 
-        self._apply_branch_traversal(startlocs, backstars=['wen_chang', 'di_kong'], offset=self._hour_offset)
+        self._apply_branch_traversal(startlocs, backstars=backstars, offset=self._hour_offset)
 
-    def _add_month_stars(self):
+    def _plot_month_stars(self):
+        lmonth = self.lunar_date.month
         startlocs = {
             'zuo_fu': 3,
             'you_bi': 11,
@@ -182,9 +185,51 @@ class PurpleStarChart:
             'tian yao': 0
         }
         backstars = ['you_bi']
-    
+
+        self._apply_branch_traversal(startlocs, backstars=backstars, offset=lmonth)
+
+        yuema_list = ['hai', 'shen', 'si', 'yin']
+        yuema_br = yuema_list[lmonth % 4]
+        self._add_star_by_branch('yue_ma', yuema_br)
+
+        jieshen_list = ['shen', 'xu', 'zi', 'yin', 'chen', 'wu']
+        jieshen_br = jieshen_list[(lmonth - 1) // 2]
+        self._add_star_by_branch('jie_shen', jieshen_br)
+
+        tianwu_list = ['hai', 'si', 'shen', 'yin']
+        tianwu_br = tianwu_list[lmonth % 4]
+        self._add_star_by_branch('tian_wu', tianwu_br)
+
+        tianyue_list = ['xu', 'si', 'chen', 'yin', 'wei', 'mao', 'hai', 'wei', 
+                        'yin', 'wu', 'xu', 'yin']
+        tianyue_br = tianyue_list[lmonth - 1]
+        self._add_star_by_branch('tian_yue', tianyue_br)
+
+        # TODO this can be done with clever math
+        yinsha_list = ['chen', 'yin', 'zi', 'xu', 'shen', 'wu']
+        yinsha_br = yinsha_list[lmonth % 6]
+        self._add_star_by_branch('yin_sha', yinsha_br)
+
+    def _plot_day_stars(self):
+        def _get_branch_from_star(star):
+            palace = self._palace_by_star[star]
+            return palace.pillar.branch.name
+        
+        lday = self.lunar_date.day
+
+        self._add_star_by_branch('san_tai', _get_branch_from_star('zuo_fu'), 
+                                 offset=lday)
+        self._add_star_by_branch('ba_zuo', _get_branch_from_star('you_bi'), 
+                                 offset=lday, back=True)
+        self._add_star_by_branch('en_guang', _get_branch_from_star('wen_chang'),
+                                 offset=(lday - 1))
+        self._add_star_by_branch('tian_gui', _get_branch_from_star('wen_qu'),
+                                 offset=(lday - 1))
+
     def add_stars(self):
         self._derive_elemental_phase()
-        self._place_ziwei()
-        self._add_major_stars()
-        self._add_hour_stars()
+        self._plot_ziwei()
+        self._plot_major_stars()
+        self._plot_hour_stars()
+        self._plot_month_stars()
+        self._plot_day_stars()
