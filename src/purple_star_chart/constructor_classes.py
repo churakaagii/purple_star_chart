@@ -54,3 +54,4 @@ class PSPalaces:
     property: PSPalace
     fortune: PSPalace
     parents: PSPalace
+    body: PSPalace

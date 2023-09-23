@@ -14,6 +14,7 @@ class PurpleStarChart:
     lunar_date: LunarDate
     bazi: BaZiChart
     palaces: PSPalaces
+    gender: str = field(init=False, default=None)
     _hour_offset: int
     _palace_by_branch: dict = field(factory=dict)
     elemental_phase: str = field(init=False, default=None)
@@ -54,6 +55,7 @@ class PurpleStarChart:
             this_palace = PSPalace(palace, this_pillar)
             if bp_branch_name == lookup_name:
                 this_palace.is_bodypalace = True
+                palaces_dict['body'] = this_palace
             palaces_dict[palace] = this_palace
             palaces_bybranch[lookup_name] = this_palace
 
@@ -71,7 +73,7 @@ class PurpleStarChart:
         this_branch = _branches[(this_loc + offset) % 12]
         palace = self._palace_by_branch[this_branch]
         palace.stars.append(star_name)
-        self._palace_by_star[star_name] = palace.name
+        self._palace_by_star[star_name] = palace
 
     def _apply_branch_traversal(self, starmaps, backstars=[], **kwargs):
         for star, loc in starmaps.items():
@@ -210,21 +212,141 @@ class PurpleStarChart:
         yinsha_br = yinsha_list[lmonth % 6]
         self._add_star_by_branch('yin_sha', yinsha_br)
 
+    def _get_branch_from_star(self, star):
+        palace = self._palace_by_star[star]
+        return palace.pillar.branch.name
+    
     def _plot_day_stars(self):
-        def _get_branch_from_star(star):
-            palace = self._palace_by_star[star]
-            return palace.pillar.branch.name
-        
-        lday = self.lunar_date.day
+        starts = {
+            'san_tai': ('zuo_fu', 0),
+            'ba_zuo': ('you_bi', 0),
+            'en_guang': ('wen_chang', -1),
+            'tian_gui': ('wen_qu', -1)
+        }
 
-        self._add_star_by_branch('san_tai', _get_branch_from_star('zuo_fu'), 
-                                 offset=lday)
-        self._add_star_by_branch('ba_zuo', _get_branch_from_star('you_bi'), 
-                                 offset=lday, back=True)
-        self._add_star_by_branch('en_guang', _get_branch_from_star('wen_chang'),
-                                 offset=(lday - 1))
-        self._add_star_by_branch('tian_gui', _get_branch_from_star('wen_qu'),
-                                 offset=(lday - 1))
+        for star, params in starts.items():
+            this_br = self._get_branch_from_star(params[0])
+            offset = self.lunar_date.day + params[1] - 1
+            back = True if star == 'ba_zuo' else False
+            self._add_star_by_branch(star, this_br, offset=offset, back=back)
+
+    def _plot_year_stars(self):
+        ystem_loc = _stems.index(self.bazi.year.stem.name)
+        ystem_maps = {
+            'lu_cun': ['yin', 'mao', 'si', 'wu', 'si', 'wu', 'shen', 'you', 
+                       'hai', 'zi'],
+            'qing_yang': ['mao', 'chen', 'wu', 'wei', 'wu', 'wei', 'you', 'xu', 
+                          'zi', 'chou'],
+            'tuo_luo': ['chou', 'yin', 'chen', 'si', 'chen', 'si', 'wei', 
+                        'shen', 'xu', 'hai'],
+            'tian_yue': ['chou', 'zi', 'hai', 'hai', 'chou', 'zi', 'chou', 
+                         'wu', 'mao','mao'],
+            'tian_kui': ['wei', 'shen', 'you', 'you','wei', 'shen', 'wei', 
+                         'yin', 'si', 'si'],
+            'tian_gong': ['wei', 'chen', 'si', 'yin', 'mao', 'you', 'hai', 
+                          'you', 'xu', 'wu'],
+            'tian_fu': ['you', 'shen', 'zi', 'hai', 'mao', 'yin', 'wu', 'si', 
+                        'wu', 'si']
+        }
+        trans_maps = {
+            'hua_lu': ['lian_zhen', 'tian_ji', 'tian_tong', 'tai_yin', 'tan_lang', 
+                       'wu_qu', 'tai_yang', 'ju_men', 'tian_liang', 'po_jun'],
+            'hua_quan': ['po_jun', 'tian_liang', 'tian_ji', 'tian_tong', 'tai_yin', 
+                         'tan_lang', 'wu_qu', 'tai_yang', 'zi_wei', 'ju_men'],
+            'hua_ke': ['wu_qu', 'zi_wei', 'wen_chang', 'tian_ji', 'you_bi', 
+                       'tian_liang', 'tai_yin', 'wen_qu', 'zuo_fu', 'tai_yin'],
+            'hua_ji': ['tai_yang', 'tai_yin', 'lian_zhen', 'ju_men', 'tian_ji', 
+                       'wen_qu', 'tian_tong', 'wen_chang', 'wu_qu', 'tan_lang']
+        }
+
+        for star, loc_list in ystem_maps.items():
+            self._add_star_by_branch(star, loc_list[ystem_loc])
+
+        for star, loc_list in trans_maps.items():
+            this_br = self._get_branch_from_star(loc_list[ystem_loc])
+            self._add_star_by_branch(star, this_br)
+
+    def _plot_boshi(self):
+        '''plots Bo Shi stars
+        assumes that user has set gender after initializing chart but before 
+        calling this'''
+        boshi = ['bo_shi', 'li_shi', 'qing_long', 'xiao_hao', 'jiang_jun', 
+                 'zou_shu', 'fei_lian', 'xi_shen', 'bing_fu', 'da hao', 
+                 'fu_bing', 'guan_fu']
+
+        lucun = self._get_branch_from_star('lu_cun')
+        start_ind = _branches.index(lucun)
+        boshi_branches = _branches[start_ind:] + _branches[0:start_ind]
+        
+        isYang = self.bazi.year.stem.polarity
+        if (self.gender == 'male' and isYang) or (self.gender == 'female' and not isYang):
+            to_map = boshi_branches
+        elif (self.gender == 'male' and not isYang) or (self.gender == 'female' and isYang):
+            cut = boshi_branches[1:]
+            cut.reverse()
+            to_map = [boshi_branches[0]] + cut
+
+        for star, branch in zip(boshi, to_map):
+            self._add_star_by_branch(star, branch)
+
+    def _plot_yearbr_stars(self):
+        this_maps = {
+            'tian_ku': 6,
+            'tian_xu': 6,
+            'long_chi': 4,
+            'feng_ge': 10,
+            'hong_luan': 3,
+            'tian_xi': 9,
+            'tian_kong': 1,
+            'tai_sui': 0
+        }
+        backstars = ['tian_ku', 'feng_ge', 'hong_luan', 'tian_xi']
+        ybr_ind = _branches.index(self.bazi.year.branch.name)
+        self._apply_branch_traversal(this_maps, backstars, offset=ybr_ind)
+
+        # gu chen, gua su
+        this_ind = ((ybr_ind + 1) % 12) // 3
+        quad_maps = {
+            'gu_chen': ['yin', 'si', 'shen', 'hai'],
+            'gua_su': ['xu', 'chou', 'chen', 'wei']
+        }
+        for star, amap in quad_maps.items():
+            this_br = amap[this_ind]
+            self._add_star_by_branch(star, this_br)
+
+        # fei lian
+        this_map = [_branches[8:11], _branches[5:8], _branches[2:5], _branches[-1:2]]
+        selector = ybr_ind // 3
+        mod3_ind = ybr_ind % 3
+        this_br = this_map[selector][mod3_ind]
+        self._add_star_by_branch('fei_lian', this_br)
+
+        # po sui
+        this_map = ['si', 'chou', 'you']
+        this_br = this_map[mod3_ind]
+        self._add_star_by_branch('po_sui', this_br)
+
+        # tian cai
+        this_map = ['life', 'parents', 'fortune', 'property', 'career', 'friends', 
+                    'travel', 'health', 'wealth', 'children', 'spouse', 'siblings']
+        pal_name = this_map[ybr_ind]
+        this_pal = getattr(self.palaces, pal_name)
+        this_pal.stars.append('tian_cai')
+        self._palace_by_star['tian_cai'] = this_pal
+
+        # tian shou
+        self._add_star_by_branch('tian_shou', self.palaces.body.pillar.branch.name, offset=ybr_ind)
+
+        # tian ma
+        this_map = {
+            'tian_ma': ['yin', 'hai', 'shen', 'si'],
+            'hua_gai': ['chen', 'chou', 'xu','wei'],
+            'xian_chi': ['you', 'wu', 'mao', 'zi']
+        }
+        mod4_ind = ybr_ind % 4
+        for star, amap in this_map.items():
+            this_br = amap[mod4_ind]
+            self._add_star_by_branch(star, this_br)
 
     def add_stars(self):
         self._derive_elemental_phase()
@@ -233,3 +355,6 @@ class PurpleStarChart:
         self._plot_hour_stars()
         self._plot_month_stars()
         self._plot_day_stars()
+        self._plot_year_stars()
+        self._plot_boshi()
+        self._plot_yearbr_stars()
