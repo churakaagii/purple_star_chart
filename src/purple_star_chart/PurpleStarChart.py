@@ -4,7 +4,7 @@ from attrs import define, field
 from datetime import datetime
 from .BaZiChart import BaZiChart
 from src.purple_star_chart import _stem_lookup, _branch_lookup, _stems, _branches
-from src.purple_star_chart.constructor_classes import Pillar, PSPalace, PSPalaces
+from src.purple_star_chart.constructor_classes import Pillar, PSPalace, PSPalaces, Star
 from lunardate import LunarDate
 
 @define
@@ -14,14 +14,15 @@ class PurpleStarChart:
     lunar_date: LunarDate
     bazi: BaZiChart
     palaces: PSPalaces
-    gender: str = field(init=False, default=None)
+    gender: str
     _hour_offset: int
-    _palace_by_branch: dict = field(factory=dict)
-    elemental_phase: str = field(init=False, default=None)
+    _palace_by_branch: dict
+    _traverse_back: bool
+    elemental_phase: str
     _palace_by_star: dict = field(factory=dict)
 
     @classmethod
-    def initialize_chart(cls, solar_dt):
+    def initialize_chart(cls, solar_dt, gender):
         '''set up an empty chart based on date from gregorian calendar
         requires python datetime.date or datetime.datetime format'''
         ldate = LunarDate.fromSolarDate(solar_dt.year, solar_dt.month, solar_dt.day)
@@ -43,6 +44,13 @@ class PurpleStarChart:
         bp_branch_loc = (ldate.month + hour_branch_loc - 1) % 12
         bp_branch_name = palace_branch_order[bp_branch_loc]
 
+        # determine traversal direction based on gender and polarity
+        isYang = this_bazi.year.stem.polarity
+        if (gender == 'male' and isYang) or (gender == 'female' and not isYang):
+            goback = False
+        elif (gender == 'male' and not isYang) or (gender == 'female' and isYang):
+            goback = True
+
         # generate pillars for all palaces based on life palace location and reordered branches/stems
         palaces_dict = dict()
         palaces_bybranch = dict()
@@ -58,29 +66,9 @@ class PurpleStarChart:
                 palaces_dict['body'] = this_palace
             palaces_dict[palace] = this_palace
             palaces_bybranch[lookup_name] = this_palace
-
-        # generate class
         palaces = PSPalaces(**palaces_dict)
-        return cls(solar_dt, ldate, this_bazi, palaces, hour_branch_loc, palaces_bybranch)
 
-    def _add_star_by_branch(self, star_name, start_loc, offset=0, back=False):
-        '''private helper that traverses branches based on parameters
-        and updates palace at final branch with star_name'''
-        from operator import neg
-
-        this_loc = _branches.index(start_loc) if isinstance(start_loc, str) else start_loc
-        offset = neg(offset) if back == True else offset
-        this_branch = _branches[(this_loc + offset) % 12]
-        palace = self._palace_by_branch[this_branch]
-        palace.stars.append(star_name)
-        self._palace_by_star[star_name] = palace
-
-    def _apply_branch_traversal(self, starmaps, backstars=[], **kwargs):
-        for star, loc in starmaps.items():
-            isBack = True if star in backstars else False
-            self._add_star_by_branch(star, loc, back=isBack, **kwargs)
-    
-    def _derive_elemental_phase(self):
+        # derive elemental phase
         phases = [
             [2, 6, 3, 5, 4, 6],
             [6, 5, 4, 3, 2, 5],
@@ -95,10 +83,34 @@ class PurpleStarChart:
             5: 'earth',
             6: 'fire'
         }
+        stem_ploc = _stems.index(this_bazi.year.stem.name) % 5
+        lp_branch_ploc = _branches.index(palaces.life.pillar.branch.name) // 2
+        phase = str_lookup[phases[stem_ploc][lp_branch_ploc]]
 
-        stem_ploc = _stems.index(self.bazi.year.stem.name) % 5
-        lp_branch_ploc = _branches.index(self.palaces.life.pillar.branch.name) // 2
-        self.elemental_phase = str_lookup[phases[stem_ploc][lp_branch_ploc]]
+        # generate class
+        return cls(solar_dt, ldate, this_bazi, palaces, gender, hour_branch_loc, palaces_bybranch, goback, phase)
+
+    def _add_star_by_branch(self, star_name, start_loc, offset=0, back=False):
+        '''private helper that traverses branches based on parameters
+        and updates palace at final branch with star_name'''
+        from operator import neg
+
+        this_loc = _branches.index(start_loc) if isinstance(start_loc, str) else start_loc
+        offset = neg(offset) if back == True else offset
+        this_branch = _branches[(this_loc + offset) % 12]
+        palace = self._palace_by_branch[this_branch]
+        palace.stars.append(Star(star_name))
+        self._palace_by_star[star_name] = palace
+
+    def _add_star_by_palace(self, star, palace):
+        this_pal = getattr(self.palaces, palace) if isinstance(palace, str) else palace
+        this_pal.stars.append(Star(star))
+        self._palace_by_star[star] = this_pal
+
+    def _apply_branch_traversal(self, starmaps, backstars=[], **kwargs):
+        for star, loc in starmaps.items():
+            isBack = True if star in backstars else False
+            self._add_star_by_branch(star, loc, back=isBack, **kwargs)
 
     def _plot_ziwei(self):
         ziwei_lookup = {
@@ -115,9 +127,7 @@ class PurpleStarChart:
         }
 
         ziwei_loc = _branches[ziwei_lookup[self.elemental_phase][self.lunar_date.day -1]]
-        ziwei_palace = self._palace_by_branch[ziwei_loc]
-        ziwei_palace.stars.append('zi_wei')
-        self._palace_by_star['zi_wei'] = ziwei_palace
+        self._add_star_by_palace('zi_wei', self._palace_by_branch[ziwei_loc])
 
     def _plot_major_stars(self):
         '''updates palaces with 14 major stars'''
@@ -266,6 +276,17 @@ class PurpleStarChart:
             this_br = self._get_branch_from_star(loc_list[ystem_loc])
             self._add_star_by_branch(star, this_br)
 
+    def _regen_branches_from(self, start, back_check=True):
+        ind = _branches.index(start) if isinstance(start, str) else start
+        regen = _branches[ind:] + _branches[0:ind]
+        if back_check and self._traverse_back:
+            cut = regen[1:]
+            cut.reverse()
+            out = [regen[0]] + cut
+        else:
+            out = regen
+        return out
+
     def _plot_boshi(self):
         '''plots Bo Shi stars
         assumes that user has set gender after initializing chart but before 
@@ -274,19 +295,9 @@ class PurpleStarChart:
                  'zou_shu', 'fei_lian', 'xi_shen', 'bing_fu', 'da hao', 
                  'fu_bing', 'guan_fu']
 
-        lucun = self._get_branch_from_star('lu_cun')
-        start_ind = _branches.index(lucun)
-        boshi_branches = _branches[start_ind:] + _branches[0:start_ind]
-        
-        isYang = self.bazi.year.stem.polarity
-        if (self.gender == 'male' and isYang) or (self.gender == 'female' and not isYang):
-            to_map = boshi_branches
-        elif (self.gender == 'male' and not isYang) or (self.gender == 'female' and isYang):
-            cut = boshi_branches[1:]
-            cut.reverse()
-            to_map = [boshi_branches[0]] + cut
+        boshi_branches = self._regen_branches_from(self._get_branch_from_star('lu_cun'))
 
-        for star, branch in zip(boshi, to_map):
+        for star, branch in zip(boshi, boshi_branches):
             self._add_star_by_branch(star, branch)
 
     def _plot_yearbr_stars(self):
@@ -330,11 +341,9 @@ class PurpleStarChart:
         this_map = ['life', 'parents', 'fortune', 'property', 'career', 'friends', 
                     'travel', 'health', 'wealth', 'children', 'spouse', 'siblings']
         pal_name = this_map[ybr_ind]
-        this_pal = getattr(self.palaces, pal_name)
-        this_pal.stars.append('tian_cai')
-        self._palace_by_star['tian_cai'] = this_pal
+        self._add_star_by_palace('tian_cai', pal_name)
 
-        # tian shou
+        # tian shou((ybr // 2) * 2) + 2
         self._add_star_by_branch('tian_shou', self.palaces.body.pillar.branch.name, offset=ybr_ind)
 
         # tian ma
@@ -348,8 +357,67 @@ class PurpleStarChart:
             this_br = amap[mod4_ind]
             self._add_star_by_branch(star, this_br)
 
+    def _plot_changshen(self):
+        changshen = ['chang_shen', 'mu_yu', 'guan_dai', 'lin_guan', 'di_wang', 
+                     'shuai', 'bing', 'si', 'mu', 'jue', 'tai', 'yang']
+        start_by_el = {
+            'water': 'shen',
+            'wood': 'hai',
+            'metal': 'si',
+            'earth': 'shen',
+            'fire': 'yin'
+        }
+        this_branches = self._regen_branches_from(start_by_el[self.elemental_phase])
+        for star, branch in zip(changshen, this_branches):
+            self._add_star_by_branch(star, branch)
+
+    def _plot_misc_stars(self):
+        # jie kong
+        from operator import abs
+
+        bstem = _stems.index(self.bazi.year.stem.name)
+        br_ind = (abs((bstem // 2) - 4) * 2) + (bstem % 2)
+        this_br = _branches[br_ind]
+        self._add_star_by_branch('jie_kong', this_br)
+
+        # xun kong
+        ybr = _branches.index(self.bazi.year.branch.name)
+        start = (((ybr // 2) * 2) + 2) % 12
+        this_branches = self._regen_branches_from(start, back_check=False)
+        yst = _stems.index(self.bazi.year.stem.name)
+        this_br = this_branches[yst]
+        self._add_star_by_branch('xun_kong', this_br)
+
+        # tian shang
+        self._add_star_by_palace('tian_shang', 'friends')
+
+        # tian shi
+        self._add_star_by_palace('tian_shi', 'health')
+
+    def _get_star_obj(self, star_name):
+        palace = self._palace_by_star[star_name]
+        for star in palace.stars:
+            if star.name == star_name:
+                return star
+
+    def _add_details_to_stars(self):
+        # life master
+        lm_map = ['tan_lang', 'ju_men', 'lu_cun', 'wen_qu', 'lian_zhen', 
+                  'wu_qu', 'po_jun', 'wu_qu', 'lian_zhen', 'wen_qu', 'lu_cun', 
+                  'ju_men']
+        lm_lookup = dict(zip(_branches, lm_map))
+        lm_name = lm_lookup[self.palaces.life.pillar.branch.name]
+        lm_star = self._get_star_obj(lm_name)
+        lm_star.isLifeMaster = True
+
+        # body master
+        bm_map = ['huo_xing', 'tian_xiang', 'tian_liang', 'tian_tong', 'wen_chang', 'tian_ji'] * 2
+        bm_lookup = dict(zip(_branches, bm_map))
+        bm_name = bm_lookup[self.bazi.year.branch.name]
+        bm_star = self._get_star_obj(bm_name)
+        bm_star.isBodyMaster = True
+
     def add_stars(self):
-        self._derive_elemental_phase()
         self._plot_ziwei()
         self._plot_major_stars()
         self._plot_hour_stars()
@@ -358,3 +426,6 @@ class PurpleStarChart:
         self._plot_year_stars()
         self._plot_boshi()
         self._plot_yearbr_stars()
+        self._plot_changshen()
+        self._plot_misc_stars()
+        self._add_details_to_stars()

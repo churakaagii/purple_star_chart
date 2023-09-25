@@ -55,3 +55,13 @@ class PSPalaces:
     fortune: PSPalace
     parents: PSPalace
     body: PSPalace
+
+@define
+class Star:
+    name: str
+    magnitude: str = field(init=False, default=None)
+    isLifeMaster: bool = field(init=False, default=False)
+    isBodyMaster: bool = field(init=False, default=False)
+
+    def pretty_str(self):
+        return self.name.replace('_', ' ').title()
