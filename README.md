@@ -11,7 +11,7 @@ This is very much an early-stage work in progress, so there's no real install pr
 Right now, it's just a couple of classes:
 
 * `src/purple_star_chart/BaZiChart.py`
- * Generates a Ba Zi Chart, aka the Four Pillars of Destiny. This is a simple form of Chinese astrology that can be entertaining on its own, but also contains information useful to generating a Purple Star Chart.
+  * Generates a Ba Zi Chart, aka the Four Pillars of Destiny. This is a simple form of Chinese astrology that can be entertaining on its own, but also contains information useful to generating a Purple Star Chart.
 * `src/purple_star_chart/PurpleStarChart.py`
 
 Currently, both are best initialized using provided class methods and a Gregorian calendar date and time of birth in `datetime` format from Python's standard library.
